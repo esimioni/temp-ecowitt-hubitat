@@ -1368,10 +1368,12 @@ Boolean attributeUpdate(String key, String val) {
 
     case "srain_piezo":
     case ~/srain_piezo[1-8]/:
-      state.sensor = 1
-      if (val == "1")
-        updated = attributeUpdateString("true","raining");
-      else updated = attributeUpdateString("false","raining");    
+      if (settings.reportRainData) {
+        state.sensor = 1
+        if (val == "1")
+            updated = attributeUpdateString("true","raining");
+        else updated = attributeUpdateString("false","raining");    
+      }
       break;
 
     case "eventrainin":
