@@ -961,38 +961,37 @@ private Boolean attributeUpdateWindSpeed(String val, String attribWindSpeed) {
 
 private Boolean attributeUpdateWindDirection(String val, String attribWindDirection, String attribWindCompass) {
 
-  if (!settings.calcWindCompass) {
-    // First time: initialize and show the preference
-    if (settings.calcWindCompass == null) device.updateSetting("calcWindCompass", [value: true, type: "bool"]);
-  }
-  if (!settings.calcWindCompass) return (false);
-
+  // First time: initialize and show the preference
+  if (settings.calcWindCompass == null) device.updateSetting("calcWindCompass", [value: true, type: "bool"]);
+  
   BigDecimal direction = val.toBigDecimal();
-
-  // BigDecimal doesn't support modulo operation so we roll up our own
-  direction = direction - (direction.divideToIntegralValue(360) * 360);
-
-  String compass;
-
-  if (direction >= 348.75 || direction < 11.25) compass = "N";
-  else if (direction < 33.75)                   compass = "NNE";
-  else if (direction < 56.25)                   compass = "NE";
-  else if (direction < 78.75)                   compass = "ENE";
-  else if (direction < 101.25)                  compass = "E";
-  else if (direction < 123.75)                  compass = "ESE";
-  else if (direction < 146.25)                  compass = "SE";
-  else if (direction < 168.75)                  compass = "SSE";
-  else if (direction < 191.25)                  compass = "S";
-  else if (direction < 213.75)                  compass = "SSW";
-  else if (direction < 236.25)                  compass = "SW";
-  else if (direction < 258.75)                  compass = "WSW";
-  else if (direction < 281.25)                  compass = "W";
-  else if (direction < 303.75)                  compass = "WNW";
-  else if (direction < 326.25)                  compass = "NW";
-  else                                          compass = "NNW";
-
   Boolean updated = attributeUpdateNumber(direction, attribWindDirection, "°");
-  if (attributeUpdateString(compass, attribWindCompass)) updated = true;
+  
+  if (settings.calcWindCompass) {
+    // BigDecimal doesn't support modulo operation so we roll up our own
+    direction = direction - (direction.divideToIntegralValue(360) * 360);
+
+    String compass;
+
+    if (direction >= 348.75 || direction < 11.25) compass = "N";
+    else if (direction < 33.75)                   compass = "NNE";
+    else if (direction < 56.25)                   compass = "NE";
+    else if (direction < 78.75)                   compass = "ENE";
+    else if (direction < 101.25)                  compass = "E";
+    else if (direction < 123.75)                  compass = "ESE";
+    else if (direction < 146.25)                  compass = "SE";
+    else if (direction < 168.75)                  compass = "SSE";
+    else if (direction < 191.25)                  compass = "S";
+    else if (direction < 213.75)                  compass = "SSW";
+    else if (direction < 236.25)                  compass = "SW";
+    else if (direction < 258.75)                  compass = "WSW";
+    else if (direction < 281.25)                  compass = "W";
+    else if (direction < 303.75)                  compass = "WNW";
+    else if (direction < 326.25)                  compass = "NW";
+    else                                          compass = "NNW";
+
+    if (attributeUpdateString(compass, attribWindCompass)) updated = true;
+  }
 
   return (updated);
 }
