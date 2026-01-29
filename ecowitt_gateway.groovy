@@ -161,8 +161,7 @@ metadata {
     input(name: "bundleSensors", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Compound Outdoor Sensors</font>", description: "<font style='font-size:12px; font-style: italic'>Combine sensors in a virtual PWS array</font>", defaultValue: true);
     input(name: "unitSystem", type: "enum", title: "<font style='font-size:12px; color:#1a77c9'>System of Measurement</font>", description: "<font style='font-size:12px; font-style: italic'>Unit system all values are converted to</font>", options: [0:"Imperial", 1:"Metric"], multiple: false, defaultValue: 0, required: true);
     input(name: "monitorGitVersion", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Monitor Git Driver Version</font>", description: "<font style='font-size:12px; font-style: italic'>Check Git Repository for New Driver Version</font>", defaultValue: true);
-    input(name: "reportLastUpdate", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report Last Update Time</font>", description: "<font style='font-size:12px; font-style: italic'>Enable to receive lastUpdate timestamp on every data reception (generates 1,440 events/day)</font>", defaultValue: false);
-    input(name: "reportRuntime", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report Gateway Runtime</font>", description: "<font style='font-size:12px; font-style: italic'>Enable to receive gateway uptime (generates 1,440 events/day)</font>", defaultValue: false);
+    input(name: "reportTimers", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report Last Update Time</font>", description: "<font style='font-size:12px; font-style: italic'>Enable uptime, lastUpdate and dateUTC updates on every data reception</font>", defaultValue: false);
     input(name: "loggingLevel", type: "enum", title: "<font style='font-size:12px; color:#1a77c9'>Log Verbosity</font>", description: "<font style='font-size:12px; font-style: italic'>Default: 'debug' for 30 min and 'info' thereafter</font>", options: ["error":"Error", "warning":"Warning", "info":"Info", "debug":"Debug", "trace":"Trace"], multiple: false, defaultValue: "info", required: true);
   }
 }
@@ -206,26 +205,6 @@ private Boolean bundleOutdoorSensors() {
   return (true);
 }
 
-private Boolean reportLastUpdateEnabled() {
-  //
-  // Return true if lastUpdate attribute reporting is enabled
-  //
-  if (settings.reportLastUpdate != null) return (settings.reportLastUpdate);
-  return (false);
-}
-
-// ------------------------------------------------------------
-
-private Boolean reportRuntimeEnabled() {
-  //
-  // Return true if runtime attribute reporting is enabled
-  //
-  if (settings.reportRuntime != null) return (settings.reportRuntime);
-  return (false);
-}
-
-// ------------------------------------------------------------
-
  Boolean unitSystemIsMetric() {
   //
   // Return true if the selected unit system is metric
@@ -245,7 +224,7 @@ private Boolean monitorGitVersion() {
   return (true);
 }
 
-// Logging --------------------------------------------------------
+// Logging --------------------------------------------------------------------------------------------------------------------
 
 private boolean logger(level, message) {
   switch(level) {
@@ -990,12 +969,14 @@ private Boolean attributeUpdate(Map data, Closure sensor) {
       break;
 
     case "runtime":
-      if(it.value.isInteger() && reportRuntimeEnabled()) { updated = attributeUpdateNumber(it.value.toInteger(), "runtime"); }
+      if (it.value.isInteger() && settings.reportTimers) { updated = attributeUpdateNumber(it.value.toInteger(), "runtime"); }
       break;
 
     case "dateutc":
-      state.dateutc = it.value;
-      updated = true;
+      if (settings.reportTimers) {
+        state.dateutc = it.value;
+        updated = true;
+      }
       break;
     
     case "gain30_piezo":
@@ -1008,7 +989,7 @@ private Boolean attributeUpdate(Map data, Closure sensor) {
       updated = sensor(it.key, it.value);
 
       // Last thing we do on the driver
-      if (reportLastUpdateEnabled() && attributeUpdateString(it.value, "lastUpdate")) updated = true;
+      if (settings.reportTimers && attributeUpdateString(it.value, "lastUpdate")) updated = true;
     //   return (updated);
       break;
     

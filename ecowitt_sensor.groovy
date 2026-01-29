@@ -40,6 +40,8 @@ metadata {
     capability "Carbon Dioxide Measurement";
     capability "Air Quality";
 
+    command "clearAllStates";
+
  // attribute "battery", "number";                             // 0-100%
     attribute "batteryIcon", "number";                         // 0, 20, 40, 60, 80, 100
     attribute "batteryOrg", "number";                          // original/un-translated battery value returned by the sensor
@@ -380,6 +382,14 @@ private BigDecimal convert_gm3_to_ozyd3(BigDecimal val) {
 }
 
 // ------------------------------------------------------------
+
+def clearAllStates() {
+  logger('I', "Clearing all device states");
+  state.clear()
+  attributeEnumerate(false).each {
+    device.deleteCurrentState(it);
+  }
+}
 
 // Attribute handling ----------------------------------------------------------------------------------------------------------
 // TODO duplicated code in ecowitt_gateway.groovy - refactor?
