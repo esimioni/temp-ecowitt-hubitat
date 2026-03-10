@@ -26,6 +26,74 @@
 public static String gitHubUser() { return "sburke781"; }
 public static String gitHubRepo() { return "ecowitt"; }
 public static String gitHubBranch() { return "main"; }
+
+import groovy.transform.Field
+
+// In-memory tracking instead of state variables for sensor presence detection
+@Field static final java.util.concurrent.ConcurrentHashMap<String, Map> sensorTracker = new java.util.concurrent.ConcurrentHashMap()
+
+// In-memory attribute cache to reduce device.currentValue() database reads
+@Field static final java.util.concurrent.ConcurrentHashMap attributeCache = new java.util.concurrent.ConcurrentHashMap()
+
+// Cached unitSystemIsMetric per device to reduce cross-device parent calls (~15-20 per cycle → 1)
+// Invalidated by parent gateway on updated()
+@Field static final java.util.concurrent.ConcurrentHashMap metricCache = new java.util.concurrent.ConcurrentHashMap()
+
+// Cached logging level per device to avoid conversion on every log call
+@Field static final java.util.concurrent.ConcurrentHashMap loggingLevelCache = new java.util.concurrent.ConcurrentHashMap()
+
+// Pre-compiled regex patterns for sensor key matching
+@Field static final java.util.regex.Pattern RE_S_BATT_1_8 = ~/batt[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WS90CAP_VOLT = ~/ws90cap_volt[1-8]/
+@Field static final java.util.regex.Pattern RE_S_BAROMRELIN_WF = ~/baromrelin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_BAROMABSIN_WF = ~/baromabsin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_RAINRATE_WF = ~/rainratein_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_SRAIN_PIEZO = ~/srain_piezo[1-8]/
+@Field static final java.util.regex.Pattern RE_S_EVENTRAIN_WF = ~/eventrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_HOURLYRAIN_WF = ~/hourlyrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_DAILYRAIN_WF = ~/dailyrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WEEKLYRAIN_WF = ~/weeklyrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_MONTHLYRAIN_WF = ~/monthlyrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_YEARLYRAIN_WF = ~/yearlyrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_TOTALRAIN_WF = ~/totalrainin_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_PM25_CH = ~/pm25_ch[1-4]/
+@Field static final java.util.regex.Pattern RE_S_PM25_AVG = ~/pm25_avg_24h_ch[1-4]/
+@Field static final java.util.regex.Pattern RE_S_LIGHTNING_WF = ~/lightning_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_LIGHTNING_NUM_WF = ~/lightning_num_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_LIGHTNING_TIME_WF = ~/lightning_time_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_UV_WF = ~/uv_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_SOLAR_WF = ~/solarradiation_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WS90_VER = ~/ws90_ver[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WINDDIR_WF = ~/winddir_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WINDDIR_AVG_WF = ~/winddir_avg10m_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WINDSPEED_WF = ~/windspeedmph_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WINDSPD_AVG_WF = ~/windspdmph_avg10m_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_WINDGUST_WF = ~/windgustmph_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_MAXGUST_WF = ~/maxdailygust_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_VPD = ~/vpd[1-8]/
+@Field static final java.util.regex.Pattern RE_S_PM25BATT = ~/pm25batt[1-4]/
+@Field static final java.util.regex.Pattern RE_S_LEAKBATT = ~/leakbatt[1-4]/
+@Field static final java.util.regex.Pattern RE_S_HUMIDITY_WF = ~/humidity_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_HUMIDITY_1_8 = ~/humidity[1-8]/
+@Field static final java.util.regex.Pattern RE_S_TEMPF_WF = ~/tempf_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_TEMP_1_8 = ~/temp[1-8]f/
+@Field static final java.util.regex.Pattern RE_S_TF_CH = ~/tf_ch[1-8]/
+@Field static final java.util.regex.Pattern RE_S_LEAK_CH = ~/leak_ch[1-4]/
+@Field static final java.util.regex.Pattern RE_S_SOILMOISTURE = ~/soilmoisture([1-9]|1[0-6])$/
+@Field static final java.util.regex.Pattern RE_S_SOILAD = ~/soilad([1-9]|1[0-6])$/
+@Field static final java.util.regex.Pattern RE_S_LEAFWETNESS = ~/leafwetness_ch[1-8]/
+@Field static final java.util.regex.Pattern RE_S_LIGHTNING_ENERGY_WF = ~/lightning_energy_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_BATT_WF = ~/batt_wf[1-8]/
+@Field static final java.util.regex.Pattern RE_S_LEAF_BATT = ~/leaf_batt[1-8]/
+@Field static final java.util.regex.Pattern RE_S_SOILBATT = ~/soilbatt([1-9]|1[0-6])$/
+@Field static final java.util.regex.Pattern RE_S_TF_BATT = ~/tf_batt[1-8]/
+
+// Pre-compiled regex for HTML template variable substitution
+@Field static final java.util.regex.Pattern RE_HTML_VAR = ~/\$\{([^}]+)\}/
+
+// Cached SimpleDateFormat for epoch-to-local time conversion
+@Field static final java.text.SimpleDateFormat cachedDateFormat = new java.text.SimpleDateFormat()
+
 metadata {
   definition(name: "Ecowitt RF Sensor", namespace: "ecowitt", author: "Simon Burke", importUrl: "https://raw.githubusercontent.com/${gitHubUser()}/${gitHubRepo()}/${gitHubBranch()}/ecowitt_sensor.groovy") {
     capability "Sensor";
@@ -194,7 +262,13 @@ metadata {
     if (reportBatterySolar != null) {
       input(name: "reportBatterySolar", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report Solar Battery Values</font>", description: "<font style='font-size:12px; font-style: italic'>Enable to receive solar battery readings. Disable to reduce events.</font>", defaultValue: false);
     }
-    input(name: "loggingLevel", type: "enum", title: "<font style='font-size:12px; color:#1a77c9'>Log Verbosity</font>", description: "<font style='font-size:12px; font-style: italic'>Default: 'debug' for 30 min and 'info' thereafter</font>", options: ["error":"Error", "warning":"Warning", "info":"Info", "debug":"Debug", "trace":"Trace"], multiple: false, defaultValue: "debug", required: true);
+    if (reportVPD != null) {
+      input(name: "reportVPD", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report VPD</font>", description: "<font style='font-size:12px; font-style: italic'>Enable/disable Vapor Pressure Deficit reporting</font>", defaultValue: false);
+    }
+    if (reportSoilAD != null) {
+      input(name: "reportSoilAD", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report Soil AD</font>", description: "<font style='font-size:12px; font-style: italic'>Enable/disable raw soil moisture millivolt (AD) reporting</font>", defaultValue: false);
+    }
+    input(name: 'loggingLevel', type: 'enum', title: 'Logging level', options: ['1':'Error', '2':'Warning', '3':'Info', '4':'Debug', '5':'Trace'], defaultValue: '3', required: true)
   }
 }
 
@@ -221,28 +295,33 @@ metadata {
 
 // Logging --------------------------------------------------------------------------------------------------------------------
 
-private boolean logger(level, message) {
-  switch(level) {
-    case 'E': log.error(getLogMessage(message)); break
-    case 'W': log.warn(getLogMessage(message)); break
-    case 'I':
-      if (loggingLevel == 'debug' || loggingLevel == 'trace' || loggingLevel == 'info')
-        log.info(getLogMessage(message))
-      break
-    case 'D':
-      if (loggingLevel == 'debug' || loggingLevel == 'trace')
-        log.debug(getLogMessage(message))
-      break
-    case 'T':
-      if (loggingLevel == 'trace')
-        log.trace(getLogMessage(message))
-      break
+private void logger(level, message) {
+    int configuredLevel = getCachedLoggingLevel()
+    switch (level) {
+        case 'E': if (configuredLevel >= 1) { log.error(getLogMessage(message)) }; break
+        case 'W': if (configuredLevel >= 2) { log.warn(getLogMessage(message)) }; break
+        case 'I': if (configuredLevel >= 3) { log.info(getLogMessage(message)) }; break
+        case 'D': if (configuredLevel >= 4) { log.debug(getLogMessage(message)) }; break
+        case 'T': if (configuredLevel >= 5) { log.trace(getLogMessage(message)) }; break
     }
 }
 
 private String getLogMessage(message) {
   def text = (message instanceof Closure) ? message() : message
   return "${device.displayName}: ${text}"
+}
+
+private void updateCachedLoggingLevel() {
+  loggingLevelCache.put(device.getId(), (settings.loggingLevel as String).toInteger())
+}
+
+private Integer getCachedLoggingLevel() {
+  Integer cached = loggingLevelCache.get(device.getId())
+  if (cached != null) return cached
+  // Fallback if not cached (shouldn't happen, but safe default)
+  Integer level = (settings.loggingLevel as String)?.toInteger() ?: 3
+  loggingLevelCache.put(device.getId(), level)
+  return level
 }
 
 // Device Status --------------------------------------------------------------------------------------------------------------
@@ -254,8 +333,9 @@ private Boolean devStatus(String str = null, String color = null) {
     return (attributeUpdateString(str, "status"));
   }
 
-  if (device.currentValue("status") != null) {
+  if (cachedString("status") != null) {
     device.deleteCurrentState("status");
+    getAttrCache().remove("status")
     return (true);
   }
 
@@ -265,19 +345,26 @@ private Boolean devStatus(String str = null, String color = null) {
 // ------------------------------------------------------------
 
 private Boolean devStatusIsError() {
-  
-  String str = device.currentValue("status") as String;
-
-  if (str && str.contains("<font style='color:red'>")) return (true);
+  String str = cachedString("status")
+  if (str && str.contains("color:red")) return (true);
   return (false);
 }
 
 // Conversions ----------------------------------------------------------------------------------------------------------------
 
 
-// TODO get this info from the hub settings
+// TODO get this info from the hub settings and cache it to avoid multiple calls to the parent gateway
+// for every sensor device on every cycle (15-20 calls per cycle → 1 call on cache miss or invalidation)
 private Boolean unitSystemIsMetric() {
-  return parent.unitSystemIsMetric()
+  Boolean cached = metricCache.get(device.getId())
+  if (cached != null) return cached
+  Boolean val = parent.unitSystemIsMetric()
+  metricCache.put(device.getId(), val)
+  return val
+}
+
+void invalidateMetricCache() {
+  metricCache.remove(device.getId())
 }
 
 // ------------------------------------------------------------
@@ -291,8 +378,7 @@ private String timeEpochToLocal(String time) {
 
     Date date = new Date(epoch);
 
-    java.text.SimpleDateFormat format = new java.text.SimpleDateFormat();
-    time = format.format(date);
+    time = cachedDateFormat.format(date);
   }
   catch (Exception e) {
     logger('E', {"Exception in timeEpochToLocal(): ${e}"});
@@ -386,9 +472,65 @@ private BigDecimal convert_gm3_to_ozyd3(BigDecimal val) {
 def clearAllStates() {
   logger('I', "Clearing all device states");
   state.clear()
+  invalidateCache()
+  invalidateMetricCache()
+  initSensorFlags()
   attributeEnumerate(false).each {
     device.deleteCurrentState(it);
   }
+}
+
+// Sensor flag helpers (in-memory replacement for state.sensor/sensorTemp/sensorRain/sensorWind) ----------------------------
+
+private Map getSensorFlags() {
+  return sensorTracker.computeIfAbsent(device.getId()) { new java.util.concurrent.ConcurrentHashMap<String, Integer>() }
+}
+
+private void initSensorFlags() {
+  sensorTracker.remove(device.getId())
+}
+
+// Attribute cache helpers (reduce device.currentValue() database reads) -------------------------------------------------------
+
+private Map<String, Object> getAttrCache() {
+  return attributeCache.computeIfAbsent(device.getId()) { new java.util.concurrent.ConcurrentHashMap<String, Object>() }
+}
+
+private void invalidateCache() {
+  attributeCache.remove(device.getId())
+}
+
+private String cachedString(String attribute) {
+  Map cache = getAttrCache()
+  if (cache.containsKey(attribute)) return cache[attribute]
+  return device.currentValue(attribute) as String
+}
+
+private BigDecimal cachedNumber(String attribute) {
+  Map cache = getAttrCache()
+  if (cache.containsKey(attribute)) return cache[attribute]
+  return device.currentValue(attribute) as BigDecimal
+}
+
+// Shared helpers to reduce code duplication -----------------------------------------------------------------------------------
+
+private void initSetting(String name, Object defaultValue, String type) {
+  if (settings[name] == null) device.updateSetting(name, [value: defaultValue, type: type])
+}
+
+private Boolean settingEnabled(String name, Object defaultValue) {
+  initSetting(name, defaultValue, "bool")
+  return settings[name]
+}
+
+private Boolean updateDangerColor(String danger, String color, String attribDanger, String attribColor) {
+  Boolean updated = attributeUpdateString(danger, attribDanger)
+  if (attributeUpdateString(color, attribColor)) updated = true
+  return updated
+}
+
+private void deleteStaleState(String attribute) {
+  if (device.currentValue(attribute) != null) device.deleteCurrentState(attribute)
 }
 
 // Attribute handling ----------------------------------------------------------------------------------------------------------
@@ -398,10 +540,12 @@ private Boolean attributeUpdateString(String val, String attribute) {
   // Only update "attribute" if different
   // Return true if "attribute" has actually been updated/created
   //
-  
-  if ((device.currentValue(attribute) as String) != val) {
-    logger('D', "attributeUpdateString(${attribute} : ${val}) - current value: ${device.currentValue(attribute)}");
+  Map cache = getAttrCache()
+  String cached = cachedString(attribute)
+  if (cached != val) {
+    logger('D', {"attributeUpdateString(${attribute} : ${val}) - current value: ${cached}"});
     sendEvent(name: attribute, value: val);
+    cache[attribute] = val
     return (true);
   }
 
@@ -424,11 +568,14 @@ private Boolean attributeUpdateNumber(BigDecimal val, String attribute, String m
   // We don't strip zeros on an integer otherwise it gets converted to scientific exponential notation
   val = (val == integer)? integer: val.stripTrailingZeros();
 
-  // Coerce Object -> BigDecimal
-  if ((device.currentValue(attribute) as BigDecimal) != val) {
-    logger('D', "attributeUpdateNumber(${attribute} : ${val}) - current value: ${device.currentValue(attribute)}");
+  // Use cache to avoid repeated device.currentValue() database reads
+  Map cache = getAttrCache()
+  BigDecimal cached = cachedNumber(attribute)
+  if (cached != val) {
+    logger('D', {"attributeUpdateNumber(${attribute} : ${val}) - current value: ${cached}"});
     if (measure) sendEvent(name: attribute, value: val, unit: measure);
     else sendEvent(name: attribute, value: val);
+    cache[attribute] = val
     return (true);
   }
 
@@ -458,54 +605,58 @@ private List<String> attributeEnumerate(Boolean existing = true) {
 
 private void attributeDeleteStale() {
   if (!settings.calcDewPoint) {
-    if (device.currentValue("dewPoint") != null) device.deleteCurrentState("dewPoint");
-    if (device.currentValue("humidityAbs") != null) device.deleteCurrentState("humidityAbs");
+    deleteStaleState("dewPoint");
+    deleteStaleState("humidityAbs");
   }
 
   if (!settings.calcHeatIndex) {
-    if (device.currentValue("heatIndex") != null) device.deleteCurrentState("heatIndex");
-    if (device.currentValue("heatDanger") != null) device.deleteCurrentState("heatDanger");
-    if (device.currentValue("heatColor") != null) device.deleteCurrentState("heatColor");
+    deleteStaleState("heatIndex");
+    deleteStaleState("heatDanger");
+    deleteStaleState("heatColor");
   }
 
   if (!settings.calcSimmerIndex) {
-    if (device.currentValue("simmerIndex") != null) device.deleteCurrentState("simmerIndex");
-    if (device.currentValue("simmerDanger") != null) device.deleteCurrentState("simmerDanger");
-    if (device.currentValue("simmerColor") != null) device.deleteCurrentState("simmerColor");
+    deleteStaleState("simmerIndex");
+    deleteStaleState("simmerDanger");
+    deleteStaleState("simmerColor");
   }
 
   if (!settings.calcWindChill) {
-    if (device.currentValue("windChill") != null) device.deleteCurrentState("windChill");
-    if (device.currentValue("windDanger") != null) device.deleteCurrentState("windDanger");
-    if (device.currentValue("windColor") != null) device.deleteCurrentState("windColor");
+    deleteStaleState("windChill");
+    deleteStaleState("windDanger");
+    deleteStaleState("windColor");
+  }
+
+  if (!settings.reportSoilAD) {
+    deleteStaleState("soilAD");
   }
 
   if (!settings.htmlEnabled) {
-    if (device.currentValue("batteryIcon") != null) device.deleteCurrentState("batteryIcon");
-    if (device.currentValue("batteryTempIcon") != null) device.deleteCurrentState("batteryTempIcon");
-    if (device.currentValue("batteryRainIcon") != null) device.deleteCurrentState("batteryRainIcon");
-    if (device.currentValue("batteryWindIcon") != null) device.deleteCurrentState("batteryWindIcon");
+    deleteStaleState("batteryIcon");
+    deleteStaleState("batteryTempIcon");
+    deleteStaleState("batteryRainIcon");
+    deleteStaleState("batteryWindIcon");
 
-    if (device.currentValue("heatDanger") != null) device.deleteCurrentState("heatDanger");
-    if (device.currentValue("heatColor") != null) device.deleteCurrentState("heatColor");
+    deleteStaleState("heatDanger");
+    deleteStaleState("heatColor");
 
-    if (device.currentValue("simmerDanger") != null) device.deleteCurrentState("simmerDanger");
-    if (device.currentValue("simmerColor") != null) device.deleteCurrentState("simmerColor");
+    deleteStaleState("simmerDanger");
+    deleteStaleState("simmerColor");
 
-    if (device.currentValue("aqiDanger") != null) device.deleteCurrentState("aqiDanger");
-    if (device.currentValue("aqiColor") != null) device.deleteCurrentState("aqiColor");
+    deleteStaleState("aqiDanger");
+    deleteStaleState("aqiColor");
 
-    if (device.currentValue("aqiDanger_avg_24h") != null) device.deleteCurrentState("aqiDanger_avg_24h");
-    if (device.currentValue("aqiColor_avg_24h") != null) device.deleteCurrentState("aqiColor_avg_24h");
+    deleteStaleState("aqiDanger_avg_24h");
+    deleteStaleState("aqiColor_avg_24h");
 
-    if (device.currentValue("waterMsg") != null) device.deleteCurrentState("waterMsg");
-    if (device.currentValue("waterColor") != null) device.deleteCurrentState("waterColor");
+    deleteStaleState("waterMsg");
+    deleteStaleState("waterColor");
   
-    if (device.currentValue("ultravioletDanger") != null) device.deleteCurrentState("ultravioletDanger");
-    if (device.currentValue("ultravioletColor") != null) device.deleteCurrentState("ultravioletColor");
+    deleteStaleState("ultravioletDanger");
+    deleteStaleState("ultravioletColor");
 
-    if (device.currentValue("windDanger") != null) device.deleteCurrentState("windDanger");
-    if (device.currentValue("windColor") != null) device.deleteCurrentState("windColor");        
+    deleteStaleState("windDanger");
+    deleteStaleState("windColor");        
   }
 }
 
@@ -520,9 +671,7 @@ private Boolean attributeUpdateBattery(String val, String attribBattery, String 
   //       3) voltage solar: range from 0.3V (empty) to 5.3V (full)
   //
   if (attribBattery == "batterySolar") {
-    // First time: initialize and show the preference
-    if (settings.reportBatterySolar == null) device.updateSetting("reportBatterySolar", [value: true, type: "bool"]);
-    if (!settings.reportBatterySolar) return (false);
+    if (!settingEnabled("reportBatterySolar", true)) return (false);
   }
   BigDecimal original = val.toBigDecimal();
   BigDecimal percent;
@@ -601,25 +750,25 @@ private Boolean attributeUpdateLowestBattery() {
   String org = "0";
   Integer type = 0;
 
-  BigDecimal temp = device.currentValue("batteryTemp") as BigDecimal;
-  BigDecimal rain = device.currentValue("batteryRain") as BigDecimal;
-  BigDecimal wind = device.currentValue("batteryWind") as BigDecimal;
+  BigDecimal temp = cachedNumber("batteryTemp");
+  BigDecimal rain = cachedNumber("batteryRain");
+  BigDecimal wind = cachedNumber("batteryWind");
 
   if (temp != null) {
     percent = temp;
-    org = device.currentValue("batteryTempOrg") as String;
+    org = cachedString("batteryTempOrg");
     type = 0;
   }
 
   if (rain != null && rain < percent) {
     percent = rain;
-    org = device.currentValue("batteryRainOrg") as String;
+    org = cachedString("batteryRainOrg");
     type = 1;
   }
 
   if (wind != null && wind < percent) {
     percent = wind;
-    org = device.currentValue("batteryWindOrg") as String;
+    org = cachedString("batteryWindOrg");
     type = 1;
   }
 
@@ -720,8 +869,8 @@ private Boolean attributeUpdatePressure(String val, String attribPressure, Strin
     altitude = 0;
   }
 
-  // Get temperature in celsious
-  BigDecimal temperature = (device.currentValue("temperature") as BigDecimal);
+  // Get temperature in celsius
+  BigDecimal temperature = cachedNumber("temperature");
   if (temperature == null) temperature = 18;
   else if (!metric) temperature = convert_F_to_C(temperature);
 
@@ -747,7 +896,7 @@ private Boolean attributeUpdatePressure(String val, String attribPressure, Strin
 private Boolean attributeUpdateRain(String val, String attribRain, Boolean hour = false) {
   if (!settings.reportRainData) {
     // First time: initialize and show the preference
-    if (settings.reportRainData == null) device.updateSetting("reportRainData", [value: true, type: "bool"]);
+    initSetting("reportRainData", true, "bool");
   } else {
 
     BigDecimal amount = val.toBigDecimal();
@@ -803,7 +952,7 @@ private Boolean attributeUpdateAQI(String val, Boolean pm25, String attribAqi, S
     else                 aqi = convertRange(pm, 505,   604,   401, 500);
 
     // Choose the highest AQI between PM2.5 and PM10
-    BigDecimal aqi25 = (device.currentValue(attribAqi) as BigDecimal);
+    BigDecimal aqi25 = cachedNumber(attribAqi);
     if (aqi < aqi25) aqi = aqi25;
   }
 
@@ -824,8 +973,7 @@ private Boolean attributeUpdateAQI(String val, Boolean pm25, String attribAqi, S
     else if (aqi < 401) { danger = "Hazardous";                      color = "7e0023"; }
     else {                danger = "Hazardous";                      color = "7e0023"; }
 
-    if (attributeUpdateString(danger, attribAqiDanger)) updated = true;
-    if (attributeUpdateString(color, attribAqiColor)) updated = true;
+    if (updateDangerColor(danger, color, attribAqiDanger, attribAqiColor)) updated = true;
   }
 
   return (updated);
@@ -932,8 +1080,7 @@ private Boolean attributeUpdateUV(String val, String attribUvIndex, String attri
     else if (index < 11) { danger = "Very High"; color = "e53210"; }
     else                 { danger = "Extreme";   color = "b567a4"; }
 
-    if (attributeUpdateString(danger, attribUvDanger)) updated = true;
-    if (attributeUpdateString(color, attribUvColor)) updated = true;
+    if (updateDangerColor(danger, color, attribUvDanger, attribUvColor)) updated = true;
   }
 
   return (updated);
@@ -972,7 +1119,7 @@ private Boolean attributeUpdateWindSpeed(String val, String attribWindSpeed) {
 private Boolean attributeUpdateWindDirection(String val, String attribWindDirection, String attribWindCompass) {
 
   // First time: initialize and show the preference
-  if (settings.calcWindCompass == null) device.updateSetting("calcWindCompass", [value: true, type: "bool"]);
+  initSetting("calcWindCompass", true, "bool");
   
   BigDecimal direction = val.toBigDecimal();
   Boolean updated = attributeUpdateNumber(direction, attribWindDirection, "°");
@@ -1013,10 +1160,10 @@ private Boolean attributeUpdateDewPoint(String val, String attribDewPoint, Strin
 
   if (!settings.calcDewPoint) {
     // First time: initialize and show the preference
-    if (settings.calcDewPoint == null) device.updateSetting("calcDewPoint", [value: false, type: "bool"]);
+    initSetting("calcDewPoint", false, "bool");
   }
   else {
-    BigDecimal temperature = (device.currentValue("temperature") as BigDecimal);
+    BigDecimal temperature = cachedNumber("temperature");
     if (temperature != null) {
 
       if (!unitSystemIsMetric()) {
@@ -1077,10 +1224,10 @@ private Boolean attributeUpdateHeatIndex(String val, String attribHeatIndex, Str
 
   if (!settings.calcHeatIndex) {
     // First time: initialize and show the preference
-    if (settings.calcHeatIndex == null) device.updateSetting("calcHeatIndex", [value: false, type: "bool"]);
+    initSetting("calcHeatIndex", false, "bool");
   }
   else {
-    BigDecimal temperature = (device.currentValue("temperature") as BigDecimal);
+    BigDecimal temperature = cachedNumber("temperature");
     if (temperature != null) {
 
       if (unitSystemIsMetric()) {
@@ -1124,8 +1271,7 @@ private Boolean attributeUpdateHeatIndex(String val, String attribHeatIndex, Str
           else                    { danger = "Extreme Danger";  color = "ff0000"; }
         }
 
-        if (attributeUpdateString(danger, attribHeatDanger)) updated = true;
-        if (attributeUpdateString(color, attribHeatColor)) updated = true;
+        if (updateDangerColor(danger, color, attribHeatDanger, attribHeatColor)) updated = true;
       }
     }
   }
@@ -1140,10 +1286,10 @@ private Boolean attributeUpdateSimmerIndex(String val, String attribSimmerIndex,
 
   if (!settings.calcSimmerIndex) {
     // First time: initialize and show the preference
-    if (settings.calcSimmerIndex == null) device.updateSetting("calcSimmerIndex", [value: false, type: "bool"]);
+    initSetting("calcSimmerIndex", false, "bool");
   }
   else {
-    BigDecimal temperature = (device.currentValue("temperature") as BigDecimal);
+    BigDecimal temperature = cachedNumber("temperature");
     if (temperature != null) {
 
       if (unitSystemIsMetric()) {
@@ -1183,8 +1329,7 @@ private Boolean attributeUpdateSimmerIndex(String val, String attribSimmerIndex,
           else                    { danger = "Circulatory Collapse Imminent"; color = "cc3300"; }
         }
 
-        if (attributeUpdateString(danger, attribSimmerDanger)) updated = true;
-        if (attributeUpdateString(color, attribSimmerColor)) updated = true;
+        if (updateDangerColor(danger, color, attribSimmerDanger, attribSimmerColor)) updated = true;
       }
     }
   }
@@ -1199,10 +1344,10 @@ private Boolean attributeUpdateWindChill(String val, String attribWindChill, Str
 
   if (!settings.calcWindChill) {
     // First time: initialize and show the preference
-    if (settings.calcWindChill == null) device.updateSetting("calcWindChill", [value: false, type: "bool"]);
+    initSetting("calcWindChill", false, "bool");
   }
   else {
-    BigDecimal temperature = (device.currentValue("temperature") as BigDecimal);
+    BigDecimal temperature = cachedNumber("temperature");
     if (temperature != null) {
 
       if (unitSystemIsMetric()) {
@@ -1236,8 +1381,7 @@ private Boolean attributeUpdateWindChill(String val, String attribWindChill, Str
           else                    { danger = "Safe";               color = "ffffff"; }
         }
 
-        if (attributeUpdateString(danger, attribWindDanger)) updated = true;
-        if (attributeUpdateString(color, attribWindColor)) updated = true;
+        if (updateDangerColor(danger, color, attribWindDanger, attribWindColor)) updated = true;
       }
     }
   }
@@ -1261,8 +1405,6 @@ private Boolean attributeUpdateHtml(String templHtml, String attribHtml) {
   Boolean updated = false;
 
   if (settings.htmlEnabled) {
-    String pattern = /\$\{([^}]+)\}/;
-
     String index;
     String val;
 
@@ -1272,7 +1414,7 @@ private Boolean attributeUpdateHtml(String templHtml, String attribHtml) {
       val = device.getDataValue("${templHtml}${index}");
       if (!val) break;
 
-      val = val.replaceAll(~pattern) { java.util.ArrayList match -> (device.currentValue(match[1].trim()) as String); }
+      val = val.replaceAll(RE_HTML_VAR) { java.util.ArrayList match -> cachedString(match[1].trim()) }
       if (attributeUpdateString(val, "${attribHtml}${index}")) updated = true;
     }
   }
@@ -1288,29 +1430,29 @@ Boolean attributeUpdate(String key, String val) {
   //
 
   Boolean updated = false;
-  Boolean bundled = device.getDataValue("isBundled");
+  Boolean bundled = (device.getDataValue("isBundled") == "true");
   Boolean orphaned = false;   
 
   switch (key) {
 
     case "wh26batt":
       if (bundled) {
-        state.sensorTemp = 1;
+        getSensorFlags()["sensorTemp"] = 1;
         updated = attributeUpdateBattery(val, "batteryTemp", "batteryTempIcon", "batteryTempOrg", 0);  // !boolean
       }
       else {
-        state.sensor = 1;
+        getSensorFlags()["sensor"] = 1;
         updated = attributeUpdateBattery(val, "battery", "batteryIcon", "batteryOrg", 0);
       }
       break;
 
     case "wh40batt":
       if (bundled) {
-        state.sensorRain = 1;
+        getSensorFlags()["sensorRain"] = 1;
         updated = attributeUpdateBattery(val, "batteryRain", "batteryRainIcon", "batteryRainOrg", 1);  // voltage
       }
       else {
-        state.sensor = 1;
+        getSensorFlags()["sensor"] = 1;
         updated = attributeUpdateBattery(val, "battery", "batteryIcon", "batteryOrg", 1);
       }
       break;
@@ -1319,11 +1461,11 @@ Boolean attributeUpdate(String key, String val) {
     case "wh80batt":
     case "wh90batt":
       if (bundled) {
-        state.sensorWind = 1;
+        getSensorFlags()["sensorWind"] = 1;
         updated = attributeUpdateBattery(val, "batteryWind", "batteryWindIcon", "batteryWindOrg", 1);  // voltage
       }
       else {
-        state.sensor = 1;
+        getSensorFlags()["sensor"] = 1;
         updated = attributeUpdateBattery(val, "battery", "batteryIcon", "batteryOrg", 1);
       }
       break;
@@ -1348,38 +1490,38 @@ Boolean attributeUpdate(String key, String val) {
    
     case "wh25batt":
     case "wh65batt":
-    case ~/batt[1-8]/:
-      state.sensor = 1;
+    case RE_S_BATT_1_8:
+      getSensorFlags()["sensor"] = 1;
       updated = attributeUpdateBattery(val, "battery", "batteryIcon", "batteryOrg", 0);  // !boolean
       break; 
         
     case "ws80cap_volt":
     case "ws90cap_volt":
-    case ~/ws90cap_volt[1-8]/:
-      state.sensor = 1;
+    case RE_S_WS90CAP_VOLT:
+      getSensorFlags()["sensor"] = 1;
       updated = attributeUpdateBattery(val, "batterySolar", "batterySolarIcon", "batterySolarOrg", 3); 
       break;
     
     case "baromrelin":
-    case ~/baromrelin_wf[1-8]/:
+    case RE_S_BAROMRELIN_WF:
       // we ignore this value as we do our own correction
       break;
 
     case "baromabsin":
-    case ~/baromabsin_wf[1-8]/:
+    case RE_S_BAROMABSIN_WF:
       updated = attributeUpdatePressure(val, "pressure", "pressureAbs");
       break;
 
     case "rainratein":
     case "rrain_piezo":
-    case ~/rainratein_wf[1-8]/:
+    case RE_S_RAINRATE_WF:
         updated = attributeUpdateRain(val, "rainRate", true);
         break;
 
     case "srain_piezo":
-    case ~/srain_piezo[1-8]/:
+    case RE_S_SRAIN_PIEZO:
       if (settings.reportRainData) {
-        state.sensor = 1
+        getSensorFlags()["sensor"] = 1
         if (val == "1")
             updated = attributeUpdateString("true","raining");
         else updated = attributeUpdateString("false","raining");    
@@ -1388,141 +1530,147 @@ Boolean attributeUpdate(String key, String val) {
 
     case "eventrainin":
     case "erain_piezo":
-    case ~/eventrainin_wf[1-8]/:
+    case RE_S_EVENTRAIN_WF:
       updated = attributeUpdateRain(val, "rainEvent");
       break;
 
     case "hourlyrainin":
     case "hrain_piezo":
-    case ~/hourlyrainin_wf[1-8]/:
+    case RE_S_HOURLYRAIN_WF:
       updated = attributeUpdateRain(val, "rainHourly");
       break;
 
     case "dailyrainin":
     case "drain_piezo":
-    case ~/dailyrainin_wf[1-8]/:
+    case RE_S_DAILYRAIN_WF:
       updated = attributeUpdateRain(val, "rainDaily");
       break;
 
     case "weeklyrainin":
     case "wrain_piezo":
-    case ~/weeklyrainin_wf[1-8]/:
+    case RE_S_WEEKLYRAIN_WF:
       updated = attributeUpdateRain(val, "rainWeekly");
       break;
 
     case "monthlyrainin":
     case "mrain_piezo":
-    case ~/monthlyrainin_wf[1-8]/:
+    case RE_S_MONTHLYRAIN_WF:
       updated = attributeUpdateRain(val, "rainMonthly");
       break;
 
     case "yearlyrainin":
     case "yrain_piezo":
-    case ~/yearlyrainin_wf[1-8]/:
+    case RE_S_YEARLYRAIN_WF:
       updated = attributeUpdateRain(val, "rainYearly");
       break;
 
     case "totalrainin":
     case "train_piezo":
-    case ~/totalrainin_wf[1-8]/:
+    case RE_S_TOTALRAIN_WF:
       updated = attributeUpdateRain(val, "rainTotal");
       break;
 
     case "pm25_co2":
-    case ~/pm25_ch[1-4]/:
+    case RE_S_PM25_CH:
       updated = attributeUpdatePM(val, "pm25");
       if (attributeUpdateAQI(val, true, "aqi", "aqiDanger", "aqiColor")) updated = true;
       break;
 
     case "pm25_24h_co2":
-    case ~/pm25_avg_24h_ch[1-4]/:
+    case RE_S_PM25_AVG:
       updated = attributeUpdatePM(val, "pm25_avg_24h");
       if (attributeUpdateAQI(val, true, "aqi_avg_24h", "aqiDanger_avg_24h", "aqiColor_avg_24h")) updated = true;
       break;
     
     case "lightning":
-    case ~/lightning_wf[1-8]/:
+    case RE_S_LIGHTNING_WF:
       updated = attributeUpdateLightningDistance(val, "lightningDistance");
       break;
 
     case "lightning_num":
-    case ~/lightning_num_wf[1-8]/:
+    case RE_S_LIGHTNING_NUM_WF:
       updated = attributeUpdateLightningCount(val, "lightningCount");
       break;
 
     case "lightning_time":
-    case ~/lightning_time_wf[1-8]/:
+    case RE_S_LIGHTNING_TIME_WF:
       updated = attributeUpdateLightningTime(val, "lightningTime");
       break;
 
     case "uv":
-    case ~/uv_wf[1-8]/:
+    case RE_S_UV_WF:
       updated = attributeUpdateUV(val, "ultravioletIndex", "ultravioletDanger", "ultravioletColor");
       break;
 
     case "solarradiation":
-    case ~/solarradiation_wf[1-8]/:
+    case RE_S_SOLAR_WF:
       updated = attributeUpdateLight(val, "solarRadiation", "illuminance");
       break;
         
     case "ws80_ver":
     case "ws90_ver":
-    case ~/ws90_ver[1-8]/:
+    case RE_S_WS90_VER:
       updated = attributeUpdateFirmware(val, "firmware");
       break;
         
     case "winddir":
-    case ~/winddir_wf[1-8]/:
+    case RE_S_WINDDIR_WF:
       updated = attributeUpdateWindDirection(val, "windDirection", "windCompass");
       break;
 
     case "winddir_avg10m":
-    case ~/winddir_avg10m_wf[1-8]/:
+    case RE_S_WINDDIR_AVG_WF:
       updated = attributeUpdateWindDirection(val, "windDirection_avg_10m", "windCompass_avg_10m");
       break;
 
     case "windspeedmph":
-    case ~/windspeedmph_wf[1-8]/:
+    case RE_S_WINDSPEED_WF:
       updated = attributeUpdateWindSpeed(val, "windSpeed");
       if (attributeUpdateWindChill(val, "windChill", "windDanger", "windColor")) updated = true;
       break;
 
     case "windspdmph_avg10m":
-    case ~/windspdmph_avg10m_wf[1-8]/:
+    case RE_S_WINDSPD_AVG_WF:
       updated = attributeUpdateWindSpeed(val, "windSpeed_avg_10m");
       break;
 
     case "windgustmph":
-    case ~/windgustmph_wf[1-8]/:
+    case RE_S_WINDGUST_WF:
       updated = attributeUpdateWindSpeed(val, "windGust");
       break;
 
     case "maxdailygust":
-    case ~/maxdailygust_wf[1-8]/:
+    case RE_S_MAXGUST_WF:
       updated = attributeUpdateWindSpeed(val, "windGustMaxDaily");
       break;
 
     case "vpd":
-    case ~/vpd[1-8]/:
-      state.sensor = 1
-      Boolean metric = unitSystemIsMetric();
-      if (metric) attributeUpdateNumber(val.toBigDecimal(), "vpd", "inHg", 4);
-      else attributeUpdateNumber(val.toBigDecimal(), "vpd", "kPa", 4);
+    case RE_S_VPD:
+      initSetting("reportVPD", false, "bool");
+      if (settings.reportVPD) {
+        getSensorFlags()["sensor"] = 1
+        BigDecimal vpd = val.toBigDecimal()
+        if (unitSystemIsMetric()) {
+          attributeUpdateNumber(vpd, "vpd", "kPa", 4)
+        } else {
+          attributeUpdateNumber(vpd * 0.2953, "vpd", "inHg", 4)
+        }
+      }
       break;
     
     case "wh57batt":
     case "co2_batt":
-    case ~/pm25batt[1-4]/:
-    case ~/leakbatt[1-4]/:
-      state.sensor = 1;
+    case RE_S_PM25BATT:
+    case RE_S_LEAKBATT:
+      getSensorFlags()["sensor"] = 1;
       updated = attributeUpdateBattery(val, "battery", "batteryIcon", "batteryOrg", 2);  // 0 - 5
       break;
 
     case "humidityin":
     case "humidity":
     case "humi_co2":
-    case ~/humidity_wf[1-8]/:
-    case ~/humidity[1-8]/:
+    case RE_S_HUMIDITY_WF:
+    case RE_S_HUMIDITY_1_8:
       updated = attributeUpdateHumidity(val, "humidity");
       if (attributeUpdateDewPoint(val, "dewPoint", "humidityAbs")) updated = true;
       if (attributeUpdateHeatIndex(val, "heatIndex", "heatDanger", "heatColor")) updated = true;
@@ -1531,40 +1679,41 @@ Boolean attributeUpdate(String key, String val) {
 
     case "tempinf":
       // We set this here because it's the integrated GW1000 sensor, which has no battery
-      state.sensor = 1;
+      getSensorFlags()["sensor"] = 1;
     case "tempf":
     case "tf_co2":
-    case ~/tempf_wf[1-8]/:
-    case ~/temp[1-8]f/:
-    case ~/tf_ch[1-8]/:
+    case RE_S_TEMPF_WF:
+    case RE_S_TEMP_1_8:
+    case RE_S_TF_CH:
       updated = attributeUpdateTemperature(val, "temperature");
       break;
     //
     // End Of Data: update orphaned status and html attributes
     //
     case "endofdata":
-      if (state.sensorTemp != null) {
-        if (state.sensorTemp == 0) orphaned = true;
-        attributeUpdateString(state.sensorTemp? "false": "true", "orphanedTemp");
-        state.sensorTemp = 0;
+      Map flags = getSensorFlags()
+      if (flags.containsKey("sensorTemp")) {
+        if (flags["sensorTemp"] == 0) orphaned = true;
+        attributeUpdateString(flags["sensorTemp"] ? "false": "true", "orphanedTemp");
+        flags["sensorTemp"] = 0;
       }
 
-      if (state.sensorRain != null) {
-        if (state.sensorRain == 0) orphaned = true;
-        attributeUpdateString(state.sensorRain? "false": "true", "orphanedRain");
-        state.sensorRain = 0;
+      if (flags.containsKey("sensorRain")) {
+        if (flags["sensorRain"] == 0) orphaned = true;
+        attributeUpdateString(flags["sensorRain"] ? "false": "true", "orphanedRain");
+        flags["sensorRain"] = 0;
       }
 
-      if (state.sensorWind != null) {
-        if (state.sensorWind == 0) orphaned = true;
-      attributeUpdateString(state.sensorWind? "false": "true", "orphanedWind");
-        state.sensorWind = 0;
+      if (flags.containsKey("sensorWind")) {
+        if (flags["sensorWind"] == 0) orphaned = true;
+      attributeUpdateString(flags["sensorWind"] ? "false": "true", "orphanedWind");
+        flags["sensorWind"] = 0;
       }      
 
-      if (state.sensor != null) {
-        if (state.sensor == 0) orphaned = true;
-      attributeUpdateString(state.sensor? "false": "true", "orphaned");
-        state.sensor = 0;      
+      if (flags.containsKey("sensor")) {
+        if (flags["sensor"] == 0) orphaned = true;
+      attributeUpdateString(flags["sensor"] ? "false": "true", "orphaned");
+        flags["sensor"] = 0;      
       }
 
       if (orphaned) {
@@ -1583,36 +1732,39 @@ Boolean attributeUpdate(String key, String val) {
       if (attributeUpdateHtml("htmlTemplate", "html")) updated = true;
       break;
     
-    case ~/leak_ch[1-4]/:
+    case RE_S_LEAK_CH:
       updated = attributeUpdateLeak(val, "water", "waterMsg", "waterColor");
       break;
     
-    case ~/soilmoisture([1-9]|1[0-6])$/:
+    case RE_S_SOILMOISTURE:
       updated = attributeUpdateHumidity(val, "humidity");
       break;  
 
-    case ~/soilad([1-9]|1[0-6])$/:
-      updated = attributeUpdateSoilAD(val, "soilAD")
+    case RE_S_SOILAD:
+      initSetting("reportSoilAD", false, "bool")
+      if (settings.reportSoilAD) {
+        updated = attributeUpdateSoilAD(val, "soilAD")
+      }
       break;
 
-    case ~/leafwetness_ch[1-8]/:
+    case RE_S_LEAFWETNESS:
       updated = attributeUpdateLeafWetness(val, "leafWetness");
       break; 
 
-    case ~/lightning_energy_wf[1-8]/:
+    case RE_S_LIGHTNING_ENERGY_WF:
       updated = attributeUpdateLightningEnergy(val, "lightningEnergy");
       break;
     
-    case ~/batt_wf[1-8]/:
-    case ~/leaf_batt[1-8]/:
-    case ~/soilbatt([1-9]|1[0-6])$/:
-    case ~/tf_batt[1-8]/:
-      state.sensor = 1;
+    case RE_S_BATT_WF:
+    case RE_S_LEAF_BATT:
+    case RE_S_SOILBATT:
+    case RE_S_TF_BATT:
+      getSensorFlags()["sensor"] = 1;
       updated = attributeUpdateBattery(val, "battery", "batteryIcon", "batteryOrg", 1);  // voltage
       break;
 
     default:
-      logger('W' {"Unrecognized attribute: ${key} = ${val}"});
+      logger('W', {"Unrecognized attribute: ${key} = ${val}"});
       break;
   }
   return (updated);
@@ -1844,10 +1996,15 @@ void installed() {
 // ------------------------------------------------------------
 
 void updated() {
+  // Cache the logging level before any logging calls
   logger('I', '[updated]')
+  updateCachedLoggingLevel()
   try {
-    // Clear previous states and sttributes
+    // Clear previous states and attributes
     state.clear();
+    initSensorFlags()
+    invalidateCache()
+    invalidateMetricCache()
     attributeDeleteStale();
 
     // Pre-process HTML templates (if any)

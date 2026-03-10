@@ -127,6 +127,84 @@ public static String version() { return "v1.35.00"; }
 public static String gitHubUser() { return "sburke781"; }
 public static String gitHubRepo() { return "ecowitt"; }
 public static String gitHubBranch() { return "main"; }
+
+import groovy.transform.Field
+
+// In-memory attribute cache to reduce device.currentValue() database reads
+@Field static final java.util.concurrent.ConcurrentHashMap attributeCache = new java.util.concurrent.ConcurrentHashMap()
+
+// Cached logging level to avoid conversion on every log call (-1 = not yet cached)
+@Field static int cachedLoggingLevel = -1
+
+// Cached enabled sensor IDs set, rebuilt only on updated()
+@Field static volatile Set cachedEnabledSensorIds = null
+
+// Pre-compiled regex patterns for sensor key matching
+@Field static final java.util.regex.Pattern RE_BATT_1_8 = ~/batt([1-8])/
+@Field static final java.util.regex.Pattern RE_TEMP_1_8 = ~/temp([1-8])f/
+@Field static final java.util.regex.Pattern RE_HUMIDITY_1_8 = ~/humidity([1-8])/
+@Field static final java.util.regex.Pattern RE_SOILBATT = ~/soilbatt([1-9]|1[0-6])$/
+@Field static final java.util.regex.Pattern RE_SOILMOISTURE = ~/soilmoisture([1-9]|1[0-6])$/
+@Field static final java.util.regex.Pattern RE_SOILAD = ~/soilad([1-9]|1[0-6])$/
+@Field static final java.util.regex.Pattern RE_PM25BATT = ~/pm25batt([1-4])/
+@Field static final java.util.regex.Pattern RE_PM25_CH = ~/pm25_ch([1-4])/
+@Field static final java.util.regex.Pattern RE_PM25_AVG = ~/pm25_avg_24h_ch([1-4])/
+@Field static final java.util.regex.Pattern RE_LEAKBATT = ~/leakbatt([1-4])/
+@Field static final java.util.regex.Pattern RE_LEAK_CH = ~/leak_ch([1-4])/
+@Field static final java.util.regex.Pattern RE_TF_BATT = ~/tf_batt([1-8])/
+@Field static final java.util.regex.Pattern RE_TF_CH = ~/tf_ch([1-8])/
+@Field static final java.util.regex.Pattern RE_LEAF_BATT = ~/leaf_batt([1-8])/
+@Field static final java.util.regex.Pattern RE_LEAFWETNESS = ~/leafwetness_ch([1-8])/
+@Field static final java.util.regex.Pattern RE_BATT_WF = ~/batt_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_TEMPF_WF = ~/tempf_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_HUMIDITY_WF = ~/humidity_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_BAROMRELIN_WF = ~/baromrelin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_BAROMABSIN_WF = ~/baromabsin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_LIGHTNING_WF = ~/lightning_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_LIGHTNING_TIME_WF = ~/lightning_time_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_LIGHTNING_ENERGY_WF = ~/lightning_energy_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_LIGHTNING_NUM_WF = ~/lightning_num_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_UV_WF = ~/uv_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_SOLAR_WF = ~/solarradiation_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_RAINRATE_WF = ~/rainratein_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_EVENTRAIN_WF = ~/eventrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_HOURLYRAIN_WF = ~/hourlyrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_DAILYRAIN_WF = ~/dailyrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_WEEKLYRAIN_WF = ~/weeklyrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_MONTHLYRAIN_WF = ~/monthlyrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_YEARLYRAIN_WF = ~/yearlyrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_TOTALRAIN_WF = ~/totalrainin_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_WINDDIR_WF = ~/winddir_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_WINDDIR_AVG_WF = ~/winddir_avg10m_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_WINDSPEED_WF = ~/windspeedmph_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_WINDSPD_AVG_WF = ~/windspdmph_avg10m_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_WINDGUST_WF = ~/windgustmph_wf([1-8])/
+@Field static final java.util.regex.Pattern RE_MAXGUST_WF = ~/maxdailygust_wf([1-8])/
+
+// O(1) lookup map: string key → sensor ID (replaces sequential switch/case for known keys)
+@Field static final Map SENSOR_KEY_MAP = [
+    // Integrated/Indoor Ambient Sensor (WH25) -> sensor id: 1
+    "wh25batt": 1, "tempinf": 1, "humidityin": 1, "baromrelin": 1, "baromabsin": 1,
+    // Outdoor Ambient Sensor (WH26 -> WH80 -> WH69) -> sensor id: 2
+    "wh26batt": 2, "tempf": 2, "humidity": 2, "vpd": 2,
+    // Rain Gauge Sensor (WH40 -> WH69) -> sensor id: 4
+    "wh40batt": 4, "rainratein": 4, "eventrainin": 4, "hourlyrainin": 4,
+    "dailyrainin": 4, "weeklyrainin": 4, "monthlyrainin": 4, "yearlyrainin": 4, "totalrainin": 4,
+    // Rain (WS90) -> sensor id: 13
+    "rrain_piezo": 13, "erain_piezo": 13, "hrain_piezo": 13, "drain_piezo": 13,
+    "wrain_piezo": 13, "mrain_piezo": 13, "yrain_piezo": 13, "train_piezo": 13, "srain_piezo": 13,
+    // Air Quality Monitor (WH45) -> sensor id: 5
+    "tf_co2": 5, "humi_co2": 5, "pm25_co2": 5, "pm25_24h_co2": 5,
+    "pm10_co2": 5, "pm10_24h_co2": 5, "co2": 5, "co2_24h": 5, "co2_batt": 5,
+    // Lightning Detection Sensor (WH57) -> sensor id: 8
+    "wh57batt": 8, "lightning": 8, "lightning_num": 8, "lightning_time": 8,
+    // Wind & Solar Sensor (WH80 -> WH69, WS90) -> sensor id: 9
+    "wh65batt": 9, "wh68batt": 9, "wh80batt": 9, "wh90batt": 9,
+    "ws80cap_volt": 9, "ws90cap_volt": 9, "ws80_ver": 9, "ws90_ver": 9,
+    "winddir": 9, "winddir_avg10m": 9, "windspeedmph": 9, "windspdmph_avg10m": 9,
+    "windgustmph": 9, "maxdailygust": 9, "uv": 9, "solarradiation": 9,
+]
+
 // Metadata -------------------------------------------------------------------------------------------------------------------
 
 metadata {
@@ -161,8 +239,9 @@ metadata {
     input(name: "bundleSensors", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Compound Outdoor Sensors</font>", description: "<font style='font-size:12px; font-style: italic'>Combine sensors in a virtual PWS array</font>", defaultValue: true);
     input(name: "unitSystem", type: "enum", title: "<font style='font-size:12px; color:#1a77c9'>System of Measurement</font>", description: "<font style='font-size:12px; font-style: italic'>Unit system all values are converted to</font>", options: [0:"Imperial", 1:"Metric"], multiple: false, defaultValue: 0, required: true);
     input(name: "monitorGitVersion", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Monitor Git Driver Version</font>", description: "<font style='font-size:12px; font-style: italic'>Check Git Repository for New Driver Version</font>", defaultValue: true);
+    input(name: "enabledSensors", type: "string", title: "<font style='font-size:12px; color:#1a77c9'>Enabled Sensor Types</font>", description: "<font style='font-size:12px; font-style: italic'>Comma-separated list of sensor types you own. Only data from listed sensors will be processed. Gateway attributes (model, firmware, etc.) are always handled.<br/>Valid values: WH25 (Indoor), WH26 (Outdoor Temp/Hum), WH31 (Multi-ch Ambient), WH34 (Soil/Water Temp), WH40 (Rain Gauge), WH45 (Air Quality, also WH41), WH51 (Soil Moisture), WH55 (Water Leak), WH57 (Lightning), WH80 or WS90 (Wind/Solar), WS90_RAIN (WS90 Piezo Rain), WN35 (Leaf Wetness), WFST (WeatherFlow)</font>", defaultValue: "WH25,WH26,WH31,WH34,WH40,WH45,WH51,WH55,WH57,WH80,WS90,WS90_RAIN,WN35,WFST");
     input(name: "reportTimers", type: "bool", title: "<font style='font-size:12px; color:#1a77c9'>Report Last Update Time</font>", description: "<font style='font-size:12px; font-style: italic'>Enable uptime, lastUpdate and dateUTC updates on every data reception</font>", defaultValue: false);
-    input(name: "loggingLevel", type: "enum", title: "<font style='font-size:12px; color:#1a77c9'>Log Verbosity</font>", description: "<font style='font-size:12px; font-style: italic'>Default: 'debug' for 30 min and 'info' thereafter</font>", options: ["error":"Error", "warning":"Warning", "info":"Info", "debug":"Debug", "trace":"Trace"], multiple: false, defaultValue: "info", required: true);
+    input(name: 'loggingLevel', type: 'enum', title: 'Logging level', options: ['1':'Error', '2':'Warning', '3':'Info', '4':'Debug', '5':'Trace'], defaultValue: '3', required: true)
   }
 }
 
@@ -205,7 +284,7 @@ private Boolean bundleOutdoorSensors() {
   return (true);
 }
 
- Boolean unitSystemIsMetric() {
+Boolean unitSystemIsMetric() {
   //
   // Return true if the selected unit system is metric
   // Declared public because it's being used by the child-devices
@@ -226,28 +305,52 @@ private Boolean monitorGitVersion() {
 
 // Logging --------------------------------------------------------------------------------------------------------------------
 
-private boolean logger(level, message) {
-  switch(level) {
-    case 'E': log.error(getLogMessage(message)); break
-    case 'W': log.warn(getLogMessage(message)); break
-    case 'I':
-      if (loggingLevel == 'debug' || loggingLevel == 'trace' || loggingLevel == 'info')
-        log.info(getLogMessage(message))
-      break
-    case 'D':
-      if (loggingLevel == 'debug' || loggingLevel == 'trace')
-        log.debug(getLogMessage(message))
-      break
-    case 'T':
-      if (loggingLevel == 'trace')
-        log.trace(getLogMessage(message))
-      break
+private void logger(level, message) {
+    int configuredLevel = getCachedLoggingLevel()
+    switch (level) {
+        case 'E': if (configuredLevel >= 1) { log.error(getLogMessage(message)) }; break
+        case 'W': if (configuredLevel >= 2) { log.warn(getLogMessage(message))  }; break
+        case 'I': if (configuredLevel >= 3) { log.info(getLogMessage(message))  }; break
+        case 'D': if (configuredLevel >= 4) { log.debug(getLogMessage(message)) }; break
+        case 'T': if (configuredLevel >= 5) { log.trace(getLogMessage(message)) }; break
     }
 }
 
 private String getLogMessage(message) {
   def text = (message instanceof Closure) ? message() : message
   return "${device.displayName}: ${text}"
+}
+
+private void updateCachedLoggingLevel() {
+  cachedLoggingLevel = (settings.loggingLevel as String).toInteger()
+}
+
+private int getCachedLoggingLevel() {
+  if (cachedLoggingLevel >= 0) return cachedLoggingLevel
+  cachedLoggingLevel = (settings.loggingLevel as String)?.toInteger() ?: 3
+  return cachedLoggingLevel
+}
+
+// Attribute cache helpers (reduce device.currentValue() database reads) -------------------------------------------------------
+
+private Map<String, Object> getAttrCache() {
+  return attributeCache.computeIfAbsent(device.getId()) { new java.util.concurrent.ConcurrentHashMap<String, Object>() }
+}
+
+private void invalidateCache() {
+  attributeCache.remove(device.getId())
+}
+
+private String cachedString(String attribute) {
+  Map cache = getAttrCache()
+  if (cache.containsKey(attribute)) return cache[attribute]
+  return device.currentValue(attribute) as String
+}
+
+private Number cachedNumber(String attribute) {
+  Map cache = getAttrCache()
+  if (cache.containsKey(attribute)) return cache[attribute]
+  return device.currentValue(attribute) as Number
 }
 
 // Versioning -----------------------------------------------------------------------------------------------------------------
@@ -294,7 +397,7 @@ Boolean versionUpdate() {
   // Retrieve current version from the driver
   Map verCur = versionExtract(version());
   // Retrieve the current version captured on the device
-  String devVer = device.currentValue(attribute);
+  String devVer = cachedString(attribute);
 
   // If the driver state variable has not been recorded on the device, update it
   if (devVer == null || devVer == "") {
@@ -424,7 +527,7 @@ private String dniUpdate() {
   Map dni = dniIsValid(setting);
   if (dni) {
 
-    if ((device.currentValue(attribute) as String) == dni.canonical) {
+    if (cachedString(attribute) == dni.canonical) {
       // The address hasn't changed: we do nothing
       error = null;
     }
@@ -492,7 +595,8 @@ void logDebugOff() {
   // Cannot be private
   //
   logger('I', "Debug logging auto-disabled")
-  device.updateSetting("loggingLevel", [value: "info", type: "enum"]);
+  device.updateSetting("loggingLevel", [value: "3", type: "enum"]);
+  updateCachedLoggingLevel()
 }
 
 // ------------------------------------------------------------
@@ -502,7 +606,7 @@ private void logData(Map data) {
   // Log all data received from the wifi gateway
   // Used only for diagnostic/debug purposes
   //
-  if (loggingLevel == 'trace') {
+  if (getCachedLoggingLevel() >= 5) {
     data.each {
       logger('T', "$it.key = $it.value");
     }
@@ -518,21 +622,12 @@ private Boolean devStatus(String str = null, String color = null) {
     return (attributeUpdateString(str, "status"));
   }
 
-  if (device.currentValue("status") != null) {
+  if (cachedString("status") != null) {
     device.deleteCurrentState("status");
+    getAttrCache().remove("status")
     return (true);
   }
 
-  return (false);
-}
-
-// ------------------------------------------------------------
-
-private Boolean devStatusIsError() {
-  
-  String str = device.currentValue("status") as String;
-
-  if (str && str.contains("<font style='color:red'>")) return (true);
   return (false);
 }
 
@@ -691,7 +786,7 @@ private String sensorId(Integer id, Integer channel) {
 
 // ------------------------------------------------------------
 
-private Boolean sensorIsBundled(Integer id, Integer channel) {
+private Boolean sensorIsBundled(Integer id) {
 
   return (sensorModel(id) == device.getDataValue("sensorBundled"));
 }
@@ -770,7 +865,7 @@ private Boolean sensorUpdate(String key, String value, Integer id = null, Intege
           // Sensor doesn't exist: we need to create it
           //
           sensor = addChildDevice("Ecowitt RF Sensor", dni, [name: sensorName(id, channel), isComponent: true]);
-          if (sensor && sensorIsBundled(id, channel)) sensor.updateDataValue("isBundled", "true");
+          if (sensor && sensorIsBundled(id)) sensor.updateDataValue("isBundled", "true");
         }
 
         devStatus();
@@ -797,14 +892,59 @@ private Boolean sensorUpdate(String key, String value, Integer id = null, Intege
 
 // Attribute handling ---------------------------------------------------------------------------------------------------------
 
+private Integer matchedChannel() {
+  return java.util.regex.Matcher.lastMatcher.group(1).toInteger()
+}
+
+@Field static final Map SENSOR_ID_NAMES = [
+  (1):"WH25 (Indoor)", (2):"WH26 (Outdoor Temp/Hum)", (3):"WH31 (Multi-ch Ambient)",
+  (4):"WH40 (Rain Gauge)", (5):"WH45 (Air Quality)", (6):"WH51 (Soil Moisture)",
+  (7):"WH55 (Water Leak)", (8):"WH57 (Lightning)", (9):"WH80/WS90 (Wind/Solar)",
+  (10):"WH34 (Soil/Water Temp)", (11):"WFST (WeatherFlow)", (12):"WN35 (Leaf Wetness)",
+  (13):"WS90_RAIN (Piezo Rain)"
+]
+
+private Set buildEnabledSensorIds() {
+  String raw = settings.enabledSensors
+  if (raw == null || raw.trim() == "") {
+    // Not configured yet: all enabled (backward compatible)
+    return new HashSet([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+  }
+  Set ids = new HashSet()
+  Set enabled = raw.tokenize(",").collect { it.trim().toUpperCase() } as Set
+  if (enabled.contains("WH25")) ids.add(1)
+  if (enabled.contains("WH26")) ids.add(2)
+  if (enabled.contains("WH31")) ids.add(3)
+  if (enabled.contains("WH40")) ids.add(4)
+  if (enabled.contains("WH45") || enabled.contains("WH41")) ids.add(5)
+  if (enabled.contains("WH51")) ids.add(6)
+  if (enabled.contains("WH55")) ids.add(7)
+  if (enabled.contains("WH57")) ids.add(8)
+  if (enabled.contains("WH80") || enabled.contains("WS90")) ids.add(9)
+  if (enabled.contains("WH34")) ids.add(10)
+  if (enabled.contains("WFST")) ids.add(11)
+  if (enabled.contains("WN35")) ids.add(12)
+  if (enabled.contains("WS90_RAIN")) ids.add(13)
+  return ids
+}
+
+private Set getEnabledSensorIds() {
+  if (cachedEnabledSensorIds != null) return cachedEnabledSensorIds
+  cachedEnabledSensorIds = buildEnabledSensorIds()
+  return cachedEnabledSensorIds
+}
+
 private Boolean attributeUpdateString(String val, String attribute) {
   //
   // Only update "attribute" if different
   // Return true if "attribute" has actually been updated/created
   //
-  if ((device.currentValue(attribute) as String) != val) {
-    logger('D', "attributeUpdateString(${attribute} : ${val}) - current value: ${device.currentValue(attribute)}");
+  Map cache = getAttrCache()
+  String current = cachedString(attribute)
+  if (current != val) {
+    logger('D', {"attributeUpdateString(${attribute} : ${val}) - current value: ${current}"});
     sendEvent(name: attribute, value: val);
+    cache[attribute] = val
     return (true);
   }
 
@@ -816,9 +956,12 @@ private Boolean attributeUpdateNumber(Number val, String attribute) {
   // Only update "attribute" if different
   // Return true if "attribute" has actually been updated/created
   //
-  if ((device.currentValue(attribute) as Number) != val) {
-    logger('D', "attributeUpdateNumber(${attribute} : ${val}) - current value: ${device.currentValue(attribute)}");
+  Map cache = getAttrCache()
+  Number current = cachedNumber(attribute)
+  if (current != val) {
+    logger('D', {"attributeUpdateNumber(${attribute} : ${val}) - current value: ${current}"});
     sendEvent(name: attribute, value: val);
+    cache[attribute] = val
     return (true);
   }
 
@@ -829,13 +972,26 @@ private Boolean attributeUpdateNumber(Number val, String attribute) {
 
 private Boolean attributeUpdate(Map data, Closure sensor) {
   //
-  // Dispatch parent/childs attribute changes to hub
+  // Dispatch parent/child attribute changes to hub
+  // Uses O(1) map lookup for known string keys and gated regex for multi-channel sensors
   //
   Boolean updated = false;
+  Set enabledIds = getEnabledSensorIds();
 
   logger('T', {"Data size: ${data.size()}"});
 
   data.each {
+
+    // ---- O(1) lookup for known single-sensor string keys ----
+    Integer sensorId = (Integer) SENSOR_KEY_MAP[it.key];
+    if (sensorId != null) {
+      if (enabledIds.contains(sensorId)) {
+        updated = sensor(it.key, it.value, sensorId);
+      }
+      return; // next key
+    }
+
+    // ---- Gateway-local keys (custom processing logic) ----
     switch (it.key) {
     //
     // Gateway attributes
@@ -844,240 +1000,170 @@ private Boolean attributeUpdate(Map data, Closure sensor) {
     case "interval":
       // added in EcoWitt firmware 2.4.0 as the time between custom data feeds
       updated = attributeUpdateNumber(it.value.toInteger(), "updateInterval");
-      break;
+      return;
 
     case "model":
       // Eg: model = GW1000_Pro
       updated = attributeUpdateString(it.value, "model");
-      break;
+      return;
 
     case "stationtype":
       // Eg: firmware = GW1000B_V1.5.7
       Map ver = versionExtract(it.value);
       if (ver) it.value = ver.desc;
       updated = attributeUpdateString(it.value, "firmware");
-      break;
+      return;
 
     case "freq":
       // Eg: rf = 915M
       updated = attributeUpdateString(it.value, "rf");
-      break;
+      return;
 
     case "PASSKEY":
       // Eg: passkey = 15CF2C872932F570B34AC469540099A4
       updated = attributeUpdateString(it.value, "passkey");
-      break;
-
-    //
-    // Integrated/Indoor Ambient Sensor (WH25)
-    //
-    case "wh25batt":
-    case "tempinf":
-    case "humidityin":
-    case "baromrelin":
-    case "baromabsin":
-      updated = sensor(it.key, it.value, 1);
-      break;
-        
-    //
-    // Outdoor Ambient Sensor (WH26 -> WH80 -> WH69)
-    //
-    case "wh26batt":
-    case "tempf":
-    case "humidity":
-    case "vpd":
-      updated = sensor(it.key, it.value, 2);
-      break;
-
-    //
-    // Rain Gauge Sensor (WH40 -> WH69)
-    //
-    case "wh40batt":
-    case "rainratein":
-    case "eventrainin":
-    case "hourlyrainin":
-    case "dailyrainin":
-    case "weeklyrainin":
-    case "monthlyrainin":
-    case "yearlyrainin":
-    case "totalrainin":
-      updated = sensor(it.key, it.value, 4);
-      break;
-    
-    //
-    // Rain (ws90)
-    //
-    case "rrain_piezo":
-    case "erain_piezo":
-    case "hrain_piezo":
-    case "drain_piezo":
-    case "wrain_piezo":
-    case "mrain_piezo":
-    case "yrain_piezo":
-    case "train_piezo": 
-    case "srain_piezo": 
-      updated = sensor(it.key, it.value, 13);
-      break;
-
-    //
-    // Air Quality Monitor (WH45)
-    //
-    case "tf_co2":
-    case "humi_co2":
-    case "pm25_co2":
-    case "pm25_24h_co2":
-    case "pm10_co2":
-    case "pm10_24h_co2":
-    case "co2":
-    case "co2_24h":
-    case "co2_batt":
-      updated = sensor(it.key, it.value, 5);
-      break;
-
-    //
-    // Lightning Detection Sensor (WH57)
-    //
-    case "wh57batt":
-    case "lightning":
-    case "lightning_num":
-    case "lightning_time":
-      updated = sensor(it.key, it.value, 8);
-      break;
-
-    //
-    // Wind & Solar Sensor (WH80 -> WH69, WS90)
-    //
-    case "wh65batt":
-    case "wh68batt":
-    case "wh80batt":
-    case "wh90batt": 
-    case "ws80cap_volt":
-    case "ws90cap_volt":
-    case "ws80_ver":
-    case "ws90_ver":
-    case "winddir":
-    case "winddir_avg10m":
-    case "windspeedmph":
-    case "windspdmph_avg10m":
-    case "windgustmph":
-    case "maxdailygust":
-    case "uv":
-    case "solarradiation":
-    case "ws90cap_volt":
-    case "ws90_ver":
-      updated = sensor(it.key, it.value, 9);
-      break;
+      return;
 
     case "runtime":
       if (it.value.isInteger() && settings.reportTimers) { updated = attributeUpdateNumber(it.value.toInteger(), "runtime"); }
-      break;
+      return;
 
     case "dateutc":
       if (settings.reportTimers) {
-        state.dateutc = it.value;
+        String prevDateutc = device.getDataValue("dateutc")
+        if (prevDateutc != it.value) {
+          device.updateDataValue("dateutc", it.value);
+        }
         updated = true;
       }
-      break;
-    
+      return;
+
     case "gain30_piezo":
       // we won't handle this one for now, need to work out what it relates to...
       updated = true;
-      break;
-    
-    case "endofdata":
-      // Special key to notify all drivers (parent and children) of end-od-data status
-      updated = sensor(it.key, it.value);
+      return;
 
+    case "endofdata":
+      // Special key to notify all drivers (parent and children) of end-of-data status
+      updated = sensor(it.key, it.value);
       // Last thing we do on the driver
       if (settings.reportTimers && attributeUpdateString(it.value, "lastUpdate")) updated = true;
-    //   return (updated);
-      break;
-    
-    // Leaf Wetness Sensor
-    case ~/leaf_batt([1-8])/:
-    case ~/leafwetness_ch([1-8])/:
-      updated = sensor(it.key, it.value, 12);
-      break;
-    
+      return;
+    }
+
+    // ---- Multi-channel sensors (regex, gated by enabledSensors preference) ----
+
+    //
+    // Leaf Wetness Sensor (WN35)
+    //
+    if (enabledIds.contains(12)) {
+      switch (it.key) {
+      case RE_LEAF_BATT:
+      case RE_LEAFWETNESS:
+        updated = sensor(it.key, it.value, 12);
+        return;
+      }
+    }
+
     //
     // Multi-channel Water Leak Sensor (WH55)
     //
-    case ~/leakbatt([1-4])/:
-    case ~/leak_ch([1-4])/:
-      updated = sensor(it.key, it.value, 7, java.util.regex.Matcher.lastMatcher.group(1).toInteger());
-      break;
-    
-    //
-    // Multi-channel Water Leak Sensor (WH34)
-    //
-    case ~/tf_batt([1-8])/:
-    case ~/tf_ch([1-8])/:
-      updated = sensor(it.key, it.value, 10, java.util.regex.Matcher.lastMatcher.group(1).toInteger());
-      break;
+    if (enabledIds.contains(7)) {
+      switch (it.key) {
+      case RE_LEAKBATT:
+      case RE_LEAK_CH:
+        updated = sensor(it.key, it.value, 7, matchedChannel());
+        return;
+      }
+    }
 
+    //
+    // Water/Soil Temperature Sensor (WH34)
+    //
+    if (enabledIds.contains(10)) {
+      switch (it.key) {
+      case RE_TF_BATT:
+      case RE_TF_CH:
+        updated = sensor(it.key, it.value, 10, matchedChannel());
+        return;
+      }
+    }
 
     //
     // Multi-channel Ambient Sensor (WH31)
     //
-    case ~/batt([1-8])/:
-    case ~/temp([1-8])f/:
-    case ~/humidity([1-8])/:
-      updated = sensor(it.key, it.value, 3, java.util.regex.Matcher.lastMatcher.group(1).toInteger());
-      break;
-    
+    if (enabledIds.contains(3)) {
+      switch (it.key) {
+      case RE_BATT_1_8:
+      case RE_TEMP_1_8:
+      case RE_HUMIDITY_1_8:
+        updated = sensor(it.key, it.value, 3, matchedChannel());
+        return;
+      }
+    }
+
     //
     // Multi-channel Soil Moisture Sensor (WH51)
     //
-    case ~/soilbatt([1-9]|1[0-6])$/:
-    case ~/soilmoisture([1-9]|1[0-6])$/:
-    case ~/soilad([1-9]|1[0-6])$/:
-      updated = sensor(it.key, it.value, 6, java.util.regex.Matcher.lastMatcher.group(1).toInteger());
-      break;
-    
+    if (enabledIds.contains(6)) {
+      switch (it.key) {
+      case RE_SOILBATT:
+      case RE_SOILMOISTURE:
+      case RE_SOILAD:
+        updated = sensor(it.key, it.value, 6, matchedChannel());
+        return;
+      }
+    }
+
     //
     // Multi-channel Air Quality Sensor (WH41)
     //
-    case ~/pm25batt([1-4])/:
-    case ~/pm25_ch([1-4])/:
-    case ~/pm25_avg_24h_ch([1-4])/:
-      updated = sensor(it.key, it.value, 5, java.util.regex.Matcher.lastMatcher.group(1).toInteger());
-      break;
-    
+    if (enabledIds.contains(5)) {
+      switch (it.key) {
+      case RE_PM25BATT:
+      case RE_PM25_CH:
+      case RE_PM25_AVG:
+        updated = sensor(it.key, it.value, 5, matchedChannel());
+        return;
+      }
+    }
+
     //
     // WeatherFlow Station (WFST)
     //
-    case ~/batt_wf([1-8])/:
-    case ~/tempf_wf([1-8])/:
-    case ~/humidity_wf([1-8])/:
-    case ~/baromrelin_wf([1-8])/:
-    case ~/baromabsin_wf([1-8])/:
-    case ~/lightning_wf([1-8])/:
-    case ~/lightning_time_wf([1-8])/:
-    case ~/lightning_energy_wf([1-8])/:
-    case ~/lightning_num_wf([1-8])/:
-    case ~/uv_wf([1-8])/:
-    case ~/solarradiation_wf([1-8])/:
-    case ~/rainratein_wf([1-8])/:
-    case ~/eventrainin_wf([1-8])/:
-    case ~/hourlyrainin_wf([1-8])/:
-    case ~/dailyrainin_wf([1-8])/:
-    case ~/weeklyrainin_wf([1-8])/:
-    case ~/monthlyrainin_wf([1-8])/:
-    case ~/yearlyrainin_wf([1-8])/:
-    case ~/totalrainin_wf([1-8])/:
-    case ~/winddir_wf([1-8])/:
-    case ~/winddir_avg10m_wf([1-8])/:
-    case ~/windspeedmph_wf([1-8])/:
-    case ~/windspdmph_avg10m_wf([1-8])/:
-    case ~/windgustmph_wf([1-8])/:
-    case ~/maxdailygust_wf([1-8])/:
-      updated = sensor(it.key, it.value, 11, java.util.regex.Matcher.lastMatcher.group(1).toInteger());
-      break;
-
-    default:
-      logger('D', {"Unrecognized attribute: ${it}"});
-      break;
+    if (enabledIds.contains(11)) {
+      switch (it.key) {
+      case RE_BATT_WF:
+      case RE_TEMPF_WF:
+      case RE_HUMIDITY_WF:
+      case RE_BAROMRELIN_WF:
+      case RE_BAROMABSIN_WF:
+      case RE_LIGHTNING_WF:
+      case RE_LIGHTNING_TIME_WF:
+      case RE_LIGHTNING_ENERGY_WF:
+      case RE_LIGHTNING_NUM_WF:
+      case RE_UV_WF:
+      case RE_SOLAR_WF:
+      case RE_RAINRATE_WF:
+      case RE_EVENTRAIN_WF:
+      case RE_HOURLYRAIN_WF:
+      case RE_DAILYRAIN_WF:
+      case RE_WEEKLYRAIN_WF:
+      case RE_MONTHLYRAIN_WF:
+      case RE_YEARLYRAIN_WF:
+      case RE_TOTALRAIN_WF:
+      case RE_WINDDIR_WF:
+      case RE_WINDDIR_AVG_WF:
+      case RE_WINDSPEED_WF:
+      case RE_WINDSPD_AVG_WF:
+      case RE_WINDGUST_WF:
+      case RE_MAXGUST_WF:
+        updated = sensor(it.key, it.value, 11, matchedChannel());
+        return;
+      }
     }
+
+    logger('D', {"Unrecognized attribute: ${it}"});
   }
 
   return (updated);
@@ -1131,11 +1217,26 @@ void updated() {
   //
   // Called everytime the user saves the driver preferences
   //
+  // Cache the logging level before any logging calls
   logger('I', "updated()");
+  updateCachedLoggingLevel()
   try {
 
     // Clear previous states
     state.clear();
+    invalidateCache();
+
+    // Invalidate metric cache on children (unit system may have changed)
+    getChildDevices()?.each { child ->
+      if (child.respondsTo("invalidateMetricCache")) child.invalidateMetricCache()
+    }
+
+    // Rebuild and cache enabled sensor IDs
+    cachedEnabledSensorIds = null
+    Set enabledIds = buildEnabledSensorIds()
+    cachedEnabledSensorIds = Collections.unmodifiableSet(enabledIds)
+    List enabledNames = enabledIds.sort().collect { SENSOR_ID_NAMES[it] }
+    logger('I', "Enabled sensors: ${enabledNames.join(', ')}")
 
     // Unschedule possible previous runIn() calls
     unschedule();
@@ -1184,7 +1285,7 @@ void updated() {
     }
 
     // Turn off debug log in 30 minutes
-    if (loggingLevel == 'debug' || loggingLevel == 'trace') runIn(1800, logDebugOff);
+    if (cachedLoggingLevel >= 4) runIn(1800, logDebugOff);
 
     // lgk get rid of now unused time attribute
     device.deleteCurrentState("time")
